@@ -1,4 +1,7 @@
 #include <Arduino.h>
+#include <SoftwareSerial.h>
+
+SoftwareSerial bridge(8, 12);
 
 const uint8_t lightPin = 6;
 
@@ -6,10 +9,10 @@ const uint8_t redPin = 9;
 const uint8_t greenPin = 10;
 const uint8_t bluePin = 11;
 
-const uint8_t motionSensorInternalPin = 2;
+const uint8_t motionSensorInternalPin = 7;
 const uint8_t motionSensorExternalPin = 4;
 
-const uint8_t switchPin = 7;
+const uint8_t switchPin = 2;
 const uint8_t naturalLightPin = A0;
 const bool DEBUG_MODE = true;
 
@@ -25,7 +28,9 @@ volatile bool autoMode;
 bool lastSwitchOn;
 int naturalLightIntensity;
 unsigned long timestamp;
-const unsigned long samplingTime = 1500;
+unsigned long timestampExternal;
+unsigned long timestampInternal;
+const unsigned long samplingTime = 6000;
 const unsigned long checkTime = 3000;
 
 enum PersonState
@@ -92,6 +97,7 @@ void onNaturalLight(void);
 void debug(char mode);
 void whatIsCurrentState(void);
 void howManyPeople(void);
+void lightsOff(void);
 
 void setup()
 {
@@ -105,6 +111,8 @@ void setup()
   autoMode = true;
   previousLightIntensity = 0;
   timestamp = millis();
+  timestampExternal = millis()- samplingTime;
+  timestampInternal = millis()- samplingTime;
   pinMode(switchPin, INPUT);
   pinMode(lightPin, OUTPUT);
   pinMode(naturalLightPin, INPUT);
@@ -114,6 +122,7 @@ void setup()
   pinMode(motionSensorInternalPin, INPUT);
   pinMode(motionSensorExternalPin, INPUT);
   attachInterrupt(digitalPinToInterrupt(switchPin), onSwitchPressed, RISING);
+  bridge.begin(9600);
   Serial.begin(9600);
 }
 
@@ -126,9 +135,9 @@ void loop()
 
   if (val == HIGH)
   {
-    if (millis() - timestamp > samplingTime)
+    if (millis() - timestampExternal > samplingTime)
     {
-      // Serial.println("The ext sensor read something");
+      Serial.println("The ext sensor read something");
       if (currentPersonState == OUT)
         futurePersonState = HALFWAY_IN;
 
@@ -170,22 +179,23 @@ void loop()
       }
       currentPersonState = futurePersonState;
       whatIsCurrentState();
-      timestamp = millis();
+      timestampExternal = millis();
     }
+    
   }
 
   val = digitalRead(motionSensorInternalPin);
   if (val == HIGH)
   {
-    if (millis() - timestamp > samplingTime)
+    if (millis() - timestampInternal > samplingTime)
     {
-      // Serial.println("The int sensor read something");
+      Serial.println("The int sensor read something");
       if (currentPersonState == HALFWAY_IN)
       {
         futurePersonState = IN;
         peopleInTheRoom = peopleInTheRoom + 1;
-        Serial.write(PEOPLE_IN_THE_ROOM);
-        Serial.write(peopleInTheRoom);
+        bridge.write(PEOPLE_IN_THE_ROOM);
+        bridge.write(peopleInTheRoom);
         if (!switchOn)
           onNaturalLight();
       }
@@ -194,22 +204,22 @@ void loop()
       {
         futurePersonState = HALFWAY_OUT;
         peopleInTheRoom = peopleInTheRoom - 1;
-        Serial.write(PEOPLE_IN_THE_ROOM);
-        Serial.write(peopleInTheRoom);
+        bridge.write(PEOPLE_IN_THE_ROOM);
+        bridge.write(peopleInTheRoom);
       }
 
       if (currentPersonState == HALFWAY_OUT)
       {
         futurePersonState = IN;
         peopleInTheRoom = peopleInTheRoom + 1;
-        Serial.write(PEOPLE_IN_THE_ROOM);
-        Serial.write(peopleInTheRoom);
+        bridge.write(PEOPLE_IN_THE_ROOM);
+        bridge.write(peopleInTheRoom);
         if (!switchOn)
           onNaturalLight();
       }
       currentPersonState = futurePersonState;
-      whatIsCurrentState();
-      timestamp = millis();
+      // whatIsCurrentState();
+      timestampInternal = millis();
     }
   }
 
@@ -221,23 +231,6 @@ void loop()
       timestamp = millis();
     }
   }
-
-  if (switchOn && !notifiedOn)
-  {
-    if (lightState == 0)
-      Serial.write(SWITCH_OFF);
-    else
-      Serial.write(SWITCH_ON);
-    notifiedOn = true;
-  }
-  if (!switchOn && !notifiedOff)
-  {
-    if (lightState == 0)
-      Serial.write(SWITCH_OFF);
-    else
-      Serial.write(SWITCH_ON);
-    notifiedOff = true;
-  }
 }
 
 void onSwitchPressed()
@@ -245,26 +238,27 @@ void onSwitchPressed()
   noInterrupts();
   lightState = lightState > 0 ? LOW : ON;
   analogWrite(lightPin, lightState);
+  if(lightState > 0){
+    bridge.write(SWITCH_ON);
+  } else {
+    bridge.write(SWITCH_OFF);
+  }
   switchOn = !switchOn;
-  if (switchOn)
-    notifiedOn = false;
-  if (!switchOn)
-    notifiedOff = false;
   interrupts();
 }
 
 void onSerialInput()
 {
-  if (Serial.available() > 3)
+  if (bridge.available() > 3)
   {
     // look for the next valid integer in the incoming serial stream:
-    int red = Serial.parseInt();
+    int red = bridge.parseInt();
     // do it again:
-    int green = Serial.parseInt();
+    int green = bridge.parseInt();
     // do it again:
-    int blue = Serial.parseInt();
+    int blue = bridge.parseInt();
 
-    int mode = Serial.parseInt(SKIP_ALL, '\n');
+    int mode = bridge.parseInt(SKIP_ALL, '\n');
 
     if (red == 255 && green == 255 && blue == 255)
     {
@@ -273,11 +267,11 @@ void onSerialInput()
       analogWrite(bluePin, blue);
       if (mode == 1)
       {
-        Serial.write(USER_ON);
+        bridge.write(USER_ON);
       }
       if (mode == 0)
       {
-        Serial.write(VOICECOMMAND_ON);
+        bridge.write(VOICECOMMAND_ON);
       }
       lightState = HIGH;
     }
@@ -288,11 +282,11 @@ void onSerialInput()
       analogWrite(bluePin, blue);
       if (mode == 1)
       {
-        Serial.write(USER_OFF);
+        bridge.write(USER_OFF);
       }
       if (mode == 0)
       {
-        Serial.write(VOICECOMMAND_OFF);
+        bridge.write(VOICECOMMAND_OFF);
       }
       lightState = LOW;
     }
@@ -303,11 +297,11 @@ void onSerialInput()
       analogWrite(bluePin, blue);
       if (mode == 1)
       {
-        Serial.write(RED_USER);
+        bridge.write(RED_USER);
       }
       if (mode == 0)
       {
-        Serial.write(RED_VOICE);
+        bridge.write(RED_VOICE);
       }
       lightState = HIGH;
     }
@@ -318,11 +312,11 @@ void onSerialInput()
       analogWrite(bluePin, blue);
       if (mode == 1)
       {
-        Serial.write(GREEN_USER);
+        bridge.write(GREEN_USER);
       }
       if (mode == 0)
       {
-        Serial.write(GREEN_VOICE);
+        bridge.write(GREEN_VOICE);
       }
       lightState = HIGH;
     }
@@ -333,11 +327,11 @@ void onSerialInput()
       analogWrite(bluePin, blue);
       if (mode == 1)
       {
-        Serial.write(BLUE_USER);
+        bridge.write(BLUE_USER);
       }
       if (mode == 0)
       {
-        Serial.write(BLUE_VOICE);
+        bridge.write(BLUE_VOICE);
       }
       lightState = HIGH;
     }
@@ -348,11 +342,11 @@ void onSerialInput()
       analogWrite(bluePin, blue);
       if (mode == 1)
       {
-        Serial.write(YELLOW_USER);
+        bridge.write(YELLOW_USER);
       }
       if (mode == 0)
       {
-        Serial.write(YELLOW_VOICE);
+        bridge.write(YELLOW_VOICE);
       }
       lightState = HIGH;
     }
@@ -363,11 +357,11 @@ void onSerialInput()
       analogWrite(bluePin, blue);
       if (mode == 1)
       {
-        Serial.write(ORANGE_USER);
+        bridge.write(ORANGE_USER);
       }
       if (mode == 0)
       {
-        Serial.write(ORANGE_VOICE);
+        bridge.write(ORANGE_VOICE);
       }
       lightState = HIGH;
     }
@@ -378,11 +372,11 @@ void onSerialInput()
       analogWrite(bluePin, blue);
       if (mode == 1)
       {
-        Serial.write(PURPLE_USER);
+        bridge.write(PURPLE_USER);
       }
       if (mode == 0)
       {
-        Serial.write(PURPLE_VOICE);
+        bridge.write(PURPLE_VOICE);
       }
       lightState = HIGH;
     }
@@ -393,11 +387,11 @@ void onSerialInput()
       analogWrite(bluePin, blue);
       if (mode == 1)
       {
-        Serial.write(PINK_USER);
+        bridge.write(PINK_USER);
       }
       if (mode == 0)
       {
-        Serial.write(PINK_VOICE);
+        bridge.write(PINK_VOICE);
       }
       lightState = HIGH;
     }
@@ -405,9 +399,9 @@ void onSerialInput()
     autoMode = false;
   }
   // User decides if reactivate auto mode or not
-  if (Serial.available() > 0)
+  if (bridge.available() > 0)
   {
-    int turnAutoOn = Serial.parseInt(SKIP_ALL, '\n');
+    int turnAutoOn = bridge.parseInt(SKIP_ALL, '\n');
     autoMode = turnAutoOn == 65 ? true : false;
   }
 }
@@ -428,7 +422,7 @@ void onNaturalLight()
   if (autoMode)
   {
     naturalLightIntensity = analogRead(naturalLightPin);
-    // debug('n');
+    debug('n');
     if (naturalLightIntensity < naturalLightThreshold)
     {
       int previousLightState = lightState;
@@ -436,18 +430,21 @@ void onNaturalLight()
       analogWrite(lightPin, lightState);
       if (previousLightState == 0)
       {
-        Serial.write(AUTO_ON);
+        bridge.write(AUTO_ON);
       }
-      if(lightState > mediumIntensityThreshold && previousLightIntensity != highIntensityThreshold){
-        Serial.write(highIntensityThreshold);
+      if (lightState > mediumIntensityThreshold && previousLightIntensity != highIntensityThreshold)
+      {
+        bridge.write(highIntensityThreshold);
         previousLightIntensity = highIntensityThreshold;
       }
-      if(lightState > lowIntensityThreshold && lightState <= mediumIntensityThreshold && previousLightIntensity != mediumIntensityThreshold){
-        Serial.write(mediumIntensityThreshold);
+      if (lightState > lowIntensityThreshold && lightState <= mediumIntensityThreshold && previousLightIntensity != mediumIntensityThreshold)
+      {
+        bridge.write(mediumIntensityThreshold);
         previousLightIntensity = mediumIntensityThreshold;
       }
-      if(lightState > 0 && lightState <= lowIntensityThreshold && previousLightIntensity != lowIntensityThreshold){
-        Serial.write(lowIntensityThreshold);
+      if (lightState > 0 && lightState <= lowIntensityThreshold && previousLightIntensity != lowIntensityThreshold)
+      {
+        bridge.write(lowIntensityThreshold);
         previousLightIntensity = lowIntensityThreshold;
       }
     }
@@ -455,9 +452,9 @@ void onNaturalLight()
     {
       lightState = LOW;
       analogWrite(lightPin, lightState);
-      Serial.write(AUTO_OFF);
+      bridge.write(AUTO_OFF);
     }
-    // debug('l');
+    debug('l');
   }
 }
 
