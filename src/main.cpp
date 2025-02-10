@@ -27,13 +27,15 @@ volatile bool notifiedOn;
 volatile bool notifiedOff;
 volatile bool autoMode;
 
-bool lastSwitchOn;
 int naturalLightIntensity;
 unsigned long timestamp;
 unsigned long timestampExternal;
 unsigned long timestampInternal;
 const unsigned long samplingTime = 6000;
 const unsigned long checkTime = 3000;
+const unsigned long debounceDelay = 200;
+volatile unsigned long lastDebounceTime = 0;
+volatile int lastButtonState = LOW;
 
 enum PersonState
 {
@@ -106,7 +108,6 @@ void setup()
   peopleInTheRoom = 0;
   currentPersonState = OUT;
   lightState = LOW;
-  lastSwitchOn = false;
   switchOn = false;
   notifiedOn = false;
   notifiedOff = false;
@@ -139,7 +140,7 @@ void loop()
   {
     if (millis() - timestampExternal > samplingTime)
     {
-      // Serial.println("The ext sensor read something");
+      Serial.println("The ext sensor read something");
       if (currentPersonState == OUT)
         futurePersonState = HALFWAY_IN;
 
@@ -190,7 +191,7 @@ void loop()
   {
     if (millis() - timestampInternal > samplingTime)
     {
-      // Serial.println("The int sensor read something");
+      Serial.println("The int sensor read something");
       if (currentPersonState == HALFWAY_IN)
       {
         futurePersonState = IN;
@@ -237,19 +238,24 @@ void loop()
 void onSwitchPressed()
 {
   noInterrupts();
-  lightState = lightState > 0 ? LOW : ON;
-  analogWrite(lightPin, lightState);
-  if (lightState > 0)
+  if (millis() - lastDebounceTime > debounceDelay)
   {
-    Serial.println("sending SWITCH ON signal");
-    bridge.write(SWITCH_ON);
+    lightState = lightState > 0 ? LOW : ON;
+    analogWrite(lightPin, lightState);
+    if (lightState > 0)
+    {
+      Serial.println("sending SWITCH ON signal");
+      bridge.write(SWITCH_ON);
+    }
+    else
+    {
+      Serial.println("sending SWITCH OFF signal");
+      bridge.write(SWITCH_OFF);
+    }
+    switchOn = !switchOn;
+    lastDebounceTime = millis();
   }
-  else
-  {
-    Serial.println("sending SWITCH OFF signal");
-    bridge.write(SWITCH_OFF);
-  }
-  switchOn = !switchOn;
+
   interrupts();
 }
 
@@ -280,7 +286,7 @@ void onSerialInput()
       Serial.print(green);
       Serial.print(" blue: ");
       Serial.print(blue);
-      Serial.print("mode: ");
+      Serial.print(" mode: ");
       Serial.println(mode); // 1 = mobile app, 0 voice
 
       if (red == 255 && green == 255 && blue == 255)
@@ -438,9 +444,11 @@ void onSerialInput()
       }
       previousLightIntensity = highIntensityThreshold;
       autoMode = false;
-    } else {
+    }
+    else
+    {
       Serial.println("updating the auto mode");
-      autoMode = value == -1? true : false;
+      autoMode = value == -1 ? true : false;
     }
   }
 }
@@ -451,9 +459,9 @@ void lightsOff()
   // howManyPeople();
   lightState = LOW;
   analogWrite(lightPin, lightState);
-  //analogWrite(redPin, 0);
-  //analogWrite(greenPin, 0);
-  //analogWrite(bluePin, 0);
+  // analogWrite(redPin, 0);
+  // analogWrite(greenPin, 0);
+  // analogWrite(bluePin, 0);
   Serial.println("sending AUTO OFF signal");
   bridge.write(AUTO_OFF);
 }
