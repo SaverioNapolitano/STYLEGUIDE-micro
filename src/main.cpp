@@ -55,7 +55,7 @@ int previousLightIntensity;
 
 /* -------------- DATA TO SEND -------------------- */
 
-const byte PEOPLE_IN_THE_ROOM = 73;
+const byte PEOPLE_IN_THE_ROOM = 73; // random byte to be distinguished from other event signals
 
 // LIGHT STATES AND CAUSES
 
@@ -63,29 +63,27 @@ const byte AUTO_OFF = 0;
 const byte AUTO_ON = 1;
 const byte SWITCH_OFF = 2;
 const byte SWITCH_ON = 3;
-const byte USER_OFF = 4;
-const byte USER_ON = 5;
+const byte MOBILE_APP_OFF = 4;
+const byte MOBILE_APP_ON = 5;
 const byte VOICECOMMAND_OFF = 6;
 const byte VOICECOMMAND_ON = 7;
 
 // Colors
 
 const byte RED_VOICE = 8;
-const byte RED_USER = 9;
+const byte RED_MOBILE_APP = 9;
 const byte GREEN_VOICE = 10;
-const byte GREEN_USER = 11;
+const byte GREEN_MOBILE_APP = 11;
 const byte BLUE_VOICE = 12;
-const byte BLUE_USER = 13;
+const byte BLUE_MOBILE_APP = 13;
 const byte YELLOW_VOICE = 14;
-const byte YELLOW_USER = 15;
+const byte YELLOW_MOBILE_APP = 15;
 const byte PURPLE_VOICE = 16;
-const byte PURPLE_USER = 17;
+const byte PURPLE_MOBILE_APP = 17;
 const byte PINK_VOICE = 18;
-const byte PINK_USER = 19;
+const byte PINK_MOBILE_APP = 19;
 const byte ORANGE_VOICE = 20;
-const byte ORANGE_USER = 21;
-
-// Natural Intensities
+const byte ORANGE_MOBILE_APP = 21;
 
 // Light Intensities
 
@@ -133,6 +131,8 @@ void loop()
 {
 
   onSerialInput();
+
+  // TODO implement the new FSM
 
   val = digitalRead(motionSensorExternalPin);
 
@@ -296,8 +296,8 @@ void onSerialInput()
         analogWrite(bluePin, blue);
         if (mode == 1)
         {
-          Serial.println("sending USER ON signal");
-          bridge.write(USER_ON);
+          Serial.println("sending MOBILE APP ON signal");
+          bridge.write(MOBILE_APP_ON);
         }
         if (mode == 0)
         {
@@ -313,8 +313,8 @@ void onSerialInput()
         analogWrite(bluePin, blue);
         if (mode == 1)
         {
-          Serial.println("sending USER OFF signal");
-          bridge.write(USER_OFF);
+          Serial.println("sending MOBILE APP OFF signal");
+          bridge.write(MOBILE_APP_OFF);
         }
         if (mode == 0)
         {
@@ -330,8 +330,8 @@ void onSerialInput()
         analogWrite(bluePin, blue);
         if (mode == 1)
         {
-          Serial.println("sending RED USER signal");
-          bridge.write(RED_USER);
+          Serial.println("sending RED MOBILE APP signal");
+          bridge.write(RED_MOBILE_APP);
         }
         if (mode == 0)
         {
@@ -347,8 +347,8 @@ void onSerialInput()
         analogWrite(bluePin, blue);
         if (mode == 1)
         {
-          Serial.println("sending GREEN USER signal");
-          bridge.write(GREEN_USER);
+          Serial.println("sending GREEN MOBILE APP signal");
+          bridge.write(GREEN_MOBILE_APP);
         }
         if (mode == 0)
         {
@@ -364,8 +364,8 @@ void onSerialInput()
         analogWrite(bluePin, blue);
         if (mode == 1)
         {
-          Serial.println("sending BLUE USER signal");
-          bridge.write(BLUE_USER);
+          Serial.println("sending BLUE MOBILE APP signal");
+          bridge.write(BLUE_MOBILE_APP);
         }
         if (mode == 0)
         {
@@ -381,8 +381,8 @@ void onSerialInput()
         analogWrite(bluePin, blue);
         if (mode == 1)
         {
-          Serial.println("sending YELLOW USER signal");
-          bridge.write(YELLOW_USER);
+          Serial.println("sending YELLOW MOBILE APP signal");
+          bridge.write(YELLOW_MOBILE_APP);
         }
         if (mode == 0)
         {
@@ -398,8 +398,8 @@ void onSerialInput()
         analogWrite(bluePin, blue);
         if (mode == 1)
         {
-          Serial.println("sending ORANGE USER signal");
-          bridge.write(ORANGE_USER);
+          Serial.println("sending ORANGE MOBILE APP signal");
+          bridge.write(ORANGE_MOBILE_APP);
         }
         if (mode == 0)
         {
@@ -415,8 +415,8 @@ void onSerialInput()
         analogWrite(bluePin, blue);
         if (mode == 1)
         {
-          Serial.println("sending PURPLE USER signal");
-          bridge.write(PURPLE_USER);
+          Serial.println("sending PURPLE MOBILE APP signal");
+          bridge.write(PURPLE_MOBILE_APP);
         }
         if (mode == 0)
         {
@@ -432,8 +432,8 @@ void onSerialInput()
         analogWrite(bluePin, blue);
         if (mode == 1)
         {
-          Serial.println("sending PINK USER signal");
-          bridge.write(PINK_USER);
+          Serial.println("sending PINK MOBILE APP signal");
+          bridge.write(PINK_MOBILE_APP);
         }
         if (mode == 0)
         {
