@@ -7,17 +7,17 @@ Code for the demo of the [STYLEGUIDE](https://github.com/SaverioNapolitano/STYLE
 **Schematic design** ![](images/schematic-design.png)
 
 > [!WARNING] 
-> In the original demo, 3 potentiometers were used to tune the rgb colors
-> In the original demo, the field of vision of the pir sensors was reduced to fit the purpose of the demo 
+> In the original demo, 3 potentiometers were used to tune the rgb colors.
+> In the original demo, the field of vision of the pir sensors was reduced to fit the purpose of the demo. 
 
 > [!CAUTION]
-> To be able to work properly, the demo requires a CP2102 Module (USB to TTL) with RX connected to pin 8 and TX connected to pin 7
+> To be able to work properly, the demo requires a CP2102 Module (USB to TTL) with RX connected to pin 8 and TX connected to pin 7.
 
 ## Purpose 
 
-The microcontroller is responsible for sending the [STYLEGUIDE bridge](https://github.com/SaverioNapolitano/STYLEGUIDE-bridge.git) signals triggered by actions performed by the user or changes in the environment, using a rudimentary event-driven architecture 
+The microcontroller is responsible for sending the [bridge](https://github.com/SaverioNapolitano/STYLEGUIDE-bridge.git) signals triggered by actions performed by the user or changes in the environment, using a rudimentary event-driven architecture. 
 
-It also manages the status of the light and keeps track of the number of people currently in the room
+It also manages the status of the light and keeps track of the number of people currently in the room.
 
 ## How it works 
 
@@ -44,15 +44,15 @@ The bridge can send the micro either one or four integers:
 
 ### State
 
-To determine its behaviour, the micro uses a finite state machine (FSM) to keep track of how many people are in the room by counting who enters and who exits 
+To determine its behaviour, the micro uses a finite state machine (FSM) to keep track of how many people are in the room by counting who enters and who exits. 
 
 > [!CAUTION]
-> Due to physical impediments, the prototype is not able to detect multiple people entering or exiting at the same time
+> Due to physical impediments, the prototype is not able to detect multiple people entering or exiting at the same time.
 
 **FSM** ![](images/fsm.png)
 
 > [!IMPORTANT]
-> This only applies if the `AUTO` mode is on
+> This only applies if the `AUTO` mode is on.
 
 
 
