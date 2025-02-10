@@ -54,6 +54,13 @@ To determine its behaviour, the micro uses a finite state machine (FSM) to keep 
 > [!IMPORTANT]
 > This only applies if the `AUTO` mode is on.
 
+## TODO
+
+- [ ] From serial connection to bluetooth 
+- [ ] Detect multiple people entering or exiting at the same time
+
+
+
 
 
 
