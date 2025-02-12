@@ -33,13 +33,13 @@ The only exception is the number of people in the room: in order to avoid it bei
 
 The encoded events involves
 - the light status (`ON`/`OFF`) and its cause (`AUTO`/`SWITCH`/`MOBILE_APP`/`VOICE`)
-- the color and its cause 
+- the color 
 - the light intensity (`HIGH`/`MEDIUM`/`LOW`)
 
 #### Bridge -> Micro
 
 The bridge can send the micro either one or four integers:
-- one integer to toggle the automode (or to disable it)
+- one integer to toggle the auto mode (or to disable it)
 - four integers to set the color of the light and tell the mode used (`MOBILE_APP`/`VOICE`)
 
 ### State
