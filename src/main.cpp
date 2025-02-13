@@ -5,8 +5,6 @@ const byte rxPin = 8;
 const byte txPin = 7;
 SoftwareSerial bridge(rxPin, txPin);
 
-// const uint8_t lightPin = 3;
-
 const uint8_t redPin = 9;
 const uint8_t greenPin = 10;
 const uint8_t bluePin = 11;
@@ -18,8 +16,6 @@ const uint8_t switchPin = 2;
 const uint8_t naturalLightPin = A0;
 const bool DEBUG_MODE = true;
 
-// const int naturalLightThreshold = 80;
-
 volatile int lightState;
 volatile bool switchOn;
 volatile bool notifiedOn;
@@ -27,7 +23,6 @@ volatile bool notifiedOff;
 volatile bool autoMode;
 
 int naturalLightIntensity;
-int naturalLightThreshold = 80;
 unsigned long timestamp;
 unsigned long timestampExternal;
 unsigned long timestampInternal;
@@ -35,7 +30,7 @@ const unsigned long samplingTime = 6000;
 const unsigned long checkTime = 3000;
 const unsigned long debounceDelay = 200;
 volatile unsigned long lastDebounceTime = 0;
-volatile int lastButtonState = LOW;
+volatile int buttonState = LOW;
 
 enum PersonState
 {
@@ -50,7 +45,6 @@ volatile PersonState futurePersonState;
 int peopleInTheRoom;
 int valExt;
 int valInt;
-// int previousLightIntensity;
 int red;
 int green;
 int blue;
@@ -231,7 +225,7 @@ void whatIsCurrentState(void);
 void howManyPeople(void);
 void lightsOff(void);
 byte getColor(void);
-byte mapValuesAndGetSignal(byte color, byte intensity);
+byte mapValuesAndGetSignal(byte color, byte intensity, bool switchPressed);
 byte mapIntensity(int intensity);
 byte getIntensity(void);
 
@@ -244,7 +238,6 @@ void setup()
   notifiedOn = false;
   notifiedOff = false;
   autoMode = true;
-  // previousLightIntensity = 0;
   red = 255;
   green = 255;
   blue = 255;
@@ -253,7 +246,6 @@ void setup()
   timestampExternal = millis() - samplingTime;
   timestampInternal = millis() - samplingTime;
   pinMode(switchPin, INPUT);
-  // pinMode(lightPin, OUTPUT);
   pinMode(naturalLightPin, INPUT);
   pinMode(redPin, OUTPUT);
   pinMode(greenPin, OUTPUT);
@@ -270,37 +262,15 @@ void loop()
 
   onSerialInput();
 
-  // TODO test the new FSM
-
-  valExt = digitalRead(motionSensorExternalPin);
-
-  if (valExt == HIGH)
+  if (millis() - timestampExternal > samplingTime)
   {
-    if (millis() - timestampExternal > samplingTime)
+    valExt = digitalRead(motionSensorExternalPin);
+    if (valExt == HIGH)
     {
       Serial.println("The ext sensor read something");
       if (currentPersonState == OUT)
         futurePersonState = HALFWAY_IN;
 
-      /* OLD VERSION
-      if (currentPersonState == HALFWAY_IN)
-      {
-        if (peopleInTheRoom == 0)
-        {
-          futurePersonState = OUT;
-          if (switchOn)
-            switchOn = false;
-          lightsOff();
-          autoMode = true;
-        }
-        else
-        {
-          futurePersonState = IN;
-        }
-      }
-      */
-
-      // NEW VERSION
       if (currentPersonState == HALFWAY_IN)
         futurePersonState = HALFWAY_IN;
 
@@ -327,15 +297,15 @@ void loop()
         }
       }
       currentPersonState = futurePersonState;
-      // whatIsCurrentState();
+      whatIsCurrentState();
       timestampExternal = millis();
     }
   }
 
-  valInt = digitalRead(motionSensorInternalPin);
-  if (valInt == HIGH)
+  if (millis() - timestampInternal > samplingTime)
   {
-    if (millis() - timestampInternal > samplingTime)
+    valInt = digitalRead(motionSensorInternalPin);
+    if (valInt == HIGH)
     {
       Serial.println("The int sensor read something");
       if (currentPersonState == HALFWAY_IN)
@@ -344,6 +314,7 @@ void loop()
         peopleInTheRoom = peopleInTheRoom + 1;
         bridge.write(PEOPLE_IN_THE_ROOM);
         bridge.write(peopleInTheRoom);
+        howManyPeople();
         if (!switchOn)
           onNaturalLight();
       }
@@ -352,30 +323,20 @@ void loop()
       {
         futurePersonState = HALFWAY_OUT;
         peopleInTheRoom = peopleInTheRoom - 1;
+        howManyPeople();
         bridge.write(PEOPLE_IN_THE_ROOM);
         bridge.write(peopleInTheRoom);
       }
-      /* OLD VERSION
-      if (currentPersonState == HALFWAY_OUT)
-      {
-        futurePersonState = IN;
-        peopleInTheRoom = peopleInTheRoom + 1;
-        bridge.write(PEOPLE_IN_THE_ROOM);
-        bridge.write(peopleInTheRoom);
-        if (!switchOn)
-          onNaturalLight();
-      }
-      */
-      // NEW VERSION
+
       if (currentPersonState == HALFWAY_OUT)
         futurePersonState = HALFWAY_OUT;
 
       currentPersonState = futurePersonState;
-      // whatIsCurrentState();
+      whatIsCurrentState();
       timestampInternal = millis();
     }
   }
-  // NEW VERSION
+  
   if (valExt == LOW && valInt == LOW)
   {
     if (currentPersonState == HALFWAY_IN && peopleInTheRoom == 0)
@@ -388,15 +349,27 @@ void loop()
       // Serial.println("Auto mode enabled");
       bridge.write(AUTO_ENABLED);
     }
+    if (currentPersonState == HALFWAY_IN && peopleInTheRoom > 0)
+    {
+      currentPersonState = IN;
+      if (switchOn)
+        switchOn = false;
+      lightsOff();
+      autoMode = true;
+      // Serial.println("Auto mode enabled");
+      bridge.write(AUTO_ENABLED);
+    }
     if (currentPersonState == HALFWAY_OUT)
     {
       currentPersonState = IN;
       peopleInTheRoom = peopleInTheRoom + 1;
+      howManyPeople();
       bridge.write(PEOPLE_IN_THE_ROOM);
       bridge.write(peopleInTheRoom);
       if (!switchOn)
         onNaturalLight();
     }
+    whatIsCurrentState();
   }
 
   if (millis() - timestamp > checkTime)
@@ -419,11 +392,13 @@ void onSwitchPressed()
     {
       byte color = getColor();
       byte intensity = getIntensity();
-      byte colorIntensity = mapValuesAndGetSignal(color, intensity);
+      Serial.println("color: " + String(color) + " intensity: " + String(intensity));
+      byte colorIntensity = mapValuesAndGetSignal(color, intensity, true);
       analogWrite(redPin, red);
       analogWrite(greenPin, green);
       analogWrite(bluePin, blue);
       // Serial.println("sending SWITCH signal");
+      Serial.println(colorIntensity);
       bridge.write(colorIntensity);
       lastColorIntensity = colorIntensity;
     }
@@ -432,7 +407,7 @@ void onSwitchPressed()
       analogWrite(redPin, lightState);
       analogWrite(greenPin, lightState);
       analogWrite(bluePin, lightState);
-      // Serial.println("sending SWITCH OFF signal");
+      Serial.println("sending SWITCH OFF signal");
       bridge.write(SWITCH_OFF);
     }
     switchOn = !switchOn;
@@ -444,12 +419,12 @@ void onSwitchPressed()
 
 byte getIntensity()
 {
-  if ((lastColorIntensity - 8) % 3 == 0)
+  if (lastColorIntensity == 8 || lastColorIntensity == 11 || lastColorIntensity == 14 || lastColorIntensity == 17 || lastColorIntensity == 20 || lastColorIntensity == 23 || lastColorIntensity == 26 || lastColorIntensity == 29 || lastColorIntensity == 32 || lastColorIntensity == 35 || lastColorIntensity == 38 || lastColorIntensity == 41 || lastColorIntensity == 44 || lastColorIntensity == 47 || lastColorIntensity == 50 || lastColorIntensity == 53 || lastColorIntensity == 56 || lastColorIntensity == 59 || lastColorIntensity == 62 || lastColorIntensity == 65 || lastColorIntensity == 68 || lastColorIntensity == 71 || lastColorIntensity == 74 || lastColorIntensity == 77 || lastColorIntensity == 80 || lastColorIntensity == 83 || lastColorIntensity == 86 || lastColorIntensity == 89 || lastColorIntensity == 92 || lastColorIntensity == 95 || lastColorIntensity == 98 || lastColorIntensity == 101)
     return highIntensity;
-  if (lastColorIntensity % 3 == 0)
+  if (lastColorIntensity == 9 || lastColorIntensity == 12 || lastColorIntensity == 15 || lastColorIntensity == 18 || lastColorIntensity == 21 || lastColorIntensity == 24 || lastColorIntensity == 27 || lastColorIntensity == 30 || lastColorIntensity == 33 || lastColorIntensity == 36 || lastColorIntensity == 39 || lastColorIntensity == 42 || lastColorIntensity == 45 || lastColorIntensity == 48 || lastColorIntensity == 51 || lastColorIntensity == 54 || lastColorIntensity == 57 || lastColorIntensity == 60 || lastColorIntensity == 63 || lastColorIntensity == 66 || lastColorIntensity == 69 || lastColorIntensity == 72 || lastColorIntensity == 75 || lastColorIntensity == 78 || lastColorIntensity == 81 || lastColorIntensity == 84 || lastColorIntensity == 87 || lastColorIntensity == 90 || lastColorIntensity == 93 || lastColorIntensity == 96 || lastColorIntensity == 99 || lastColorIntensity == 102)
     return mediumIntensity;
-  if ((lastColorIntensity - 10) % 3 == 0)
-    return lowIntensity;
+
+  return lowIntensity;
 }
 
 void onSerialInput()
@@ -930,21 +905,17 @@ void onNaturalLight()
   if (autoMode)
   {
     naturalLightIntensity = analogRead(naturalLightPin);
-    // debug('n');
-    if (naturalLightIntensity < naturalLightThreshold)
+    debug('n');
+    byte mappedIntensity = mapIntensity(naturalLightIntensity);
+    if (mappedIntensity == offIntensity)
     {
-      // OLD VERSION
-      // int previousLightState = lightState;
-      // lightState = map(naturalLightIntensity, 0, 1023, 255, 0);
-      // analogWrite(lightPin, lightState);
-
-      // NEW VERSION
-      int intensity = map(naturalLightIntensity, 0, 1023, 255, 0);
-      byte mappedIntensity = mapIntensity(intensity); // TODO implement
-
+      lightsOff();
+    }
+    else
+    {
       byte color = getColor();
 
-      byte signal = mapValuesAndGetSignal(color, mappedIntensity);
+      byte signal = mapValuesAndGetSignal(color, mappedIntensity, false);
 
       analogWrite(redPin, red);
       analogWrite(greenPin, green);
@@ -955,44 +926,26 @@ void onNaturalLight()
 
       if (signal != AUTO_OFF)
         lastColorIntensity = signal;
-
-      /* OLD VERSION
-      if (previousLightState == 0)
-      {
-        Serial.println("sending AUTO ON signal");
-        bridge.write(AUTO_ON);
-      }
-      if (lightState > mediumIntensityThreshold && previousLightIntensity != highIntensityThreshold)
-      {
-        Serial.println("sending HIGH INTENSITY signal");
-        bridge.write(highIntensityThreshold);
-        previousLightIntensity = highIntensityThreshold;
-      }
-      if (lightState > lowIntensityThreshold && lightState <= mediumIntensityThreshold && previousLightIntensity != mediumIntensityThreshold)
-      {
-        Serial.println("sending MEDIUM INTENSITY signal");
-        bridge.write(mediumIntensityThreshold);
-        previousLightIntensity = mediumIntensityThreshold;
-      }
-      if (lightState > 0 && lightState <= lowIntensityThreshold && previousLightIntensity != lowIntensityThreshold)
-      {
-        Serial.println("sending LOW INTENSITY signal");
-        bridge.write(lowIntensityThreshold);
-        previousLightIntensity = lowIntensityThreshold;
-      }
-      */
     }
-    else
-    {
-      lightsOff();
-    }
-    // debug('l');
   }
+  // debug('l');
 }
 
 byte mapIntensity(int intensity)
 {
-  // TODO
+  if (intensity < 256)
+  {
+    return highIntensity;
+  }
+  if (intensity < 512)
+  {
+    return mediumIntensity;
+  }
+  if (intensity < 768)
+  {
+    return lowIntensity;
+  }
+  return offIntensity;
 }
 
 byte getColor()
@@ -1011,11 +964,10 @@ byte getColor()
     return PINK;
   if (lastColorIntensity >= 80 && lastColorIntensity <= 91)
     return ORANGE;
-  if (lastColorIntensity >= 92 && lastColorIntensity <= 103)
-    return WHITE;
+  return WHITE;
 }
 
-byte mapValuesAndGetSignal(byte color, byte intensity)
+byte mapValuesAndGetSignal(byte color, byte intensity, bool switchPressed)
 {
 
   if (intensity == offIntensity)
@@ -1023,6 +975,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
     red = 0;
     green = 0;
     blue = 0;
+    if (switchPressed)
+      return SWITCH_OFF;
     return AUTO_OFF;
   }
   if (intensity == lowIntensity)
@@ -1032,6 +986,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 8;
       green = 0;
       blue = 0;
+      if (switchPressed)
+        return RED_SWITCH_LOW;
       return RED_AUTO_LOW;
     }
     if (color == WHITE)
@@ -1039,6 +995,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 8;
       green = 8;
       blue = 8;
+      if (switchPressed)
+        return WHITE_SWITCH_LOW;
       return WHITE_AUTO_LOW;
     }
     if (color == GREEN)
@@ -1046,6 +1004,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 0;
       green = 8;
       blue = 0;
+      if (switchPressed)
+        return GREEN_SWITCH_LOW;
       return GREEN_AUTO_LOW;
     }
     if (color == BLUE)
@@ -1053,6 +1013,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 0;
       green = 0;
       blue = 8;
+      if (switchPressed)
+        return BLUE_SWITCH_LOW;
       return BLUE_AUTO_LOW;
     }
     if (color == YELLOW)
@@ -1060,6 +1022,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 8;
       green = 8;
       blue = 0;
+      if (switchPressed)
+        return YELLOW_SWITCH_LOW;
       return YELLOW_AUTO_LOW;
     }
     if (color == ORANGE)
@@ -1067,6 +1031,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 8;
       green = 4;
       blue = 0;
+      if (switchPressed)
+        return ORANGE_SWITCH_LOW;
       return ORANGE_AUTO_LOW;
     }
     if (color == PURPLE)
@@ -1074,6 +1040,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 4;
       green = 0;
       blue = 8;
+      if (switchPressed)
+        return PURPLE_SWITCH_LOW;
       return PURPLE_AUTO_LOW;
     }
     if (color == PINK)
@@ -1081,6 +1049,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 8;
       green = 0;
       blue = 4;
+      if (switchPressed)
+        return PINK_SWITCH_LOW;
       return PINK_AUTO_LOW;
     }
   }
@@ -1092,6 +1062,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 64;
       green = 64;
       blue = 64;
+      if (switchPressed)
+        return WHITE_SWITCH_MEDIUM;
       return WHITE_AUTO_MEDIUM;
     }
     if (color == RED)
@@ -1099,6 +1071,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 64;
       green = 0;
       blue = 0;
+      if (switchPressed)
+        return RED_SWITCH_MEDIUM;
       return RED_AUTO_MEDIUM;
     }
     if (color == GREEN)
@@ -1106,6 +1080,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 0;
       green = 64;
       blue = 0;
+      if (switchPressed)
+        return GREEN_SWITCH_MEDIUM;
       return GREEN_AUTO_MEDIUM;
     }
     if (color == BLUE)
@@ -1113,6 +1089,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 0;
       green = 0;
       blue = 64;
+      if (switchPressed)
+        return BLUE_SWITCH_MEDIUM;
       return BLUE_AUTO_MEDIUM;
     }
     if (color == YELLOW)
@@ -1120,6 +1098,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 64;
       green = 64;
       blue = 0;
+      if (switchPressed)
+        return YELLOW_SWITCH_MEDIUM;
       return YELLOW_AUTO_MEDIUM;
     }
     if (color == ORANGE)
@@ -1127,6 +1107,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 64;
       green = 32;
       blue = 0;
+      if (switchPressed)
+        return ORANGE_SWITCH_MEDIUM;
       return ORANGE_AUTO_MEDIUM;
     }
     if (color == PURPLE)
@@ -1134,6 +1116,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 32;
       green = 0;
       blue = 64;
+      if (switchPressed)
+        return PURPLE_SWITCH_MEDIUM;
       return PURPLE_AUTO_MEDIUM;
     }
     if (color == PINK)
@@ -1141,6 +1125,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 64;
       green = 0;
       blue = 32;
+      if (switchPressed)
+        return PINK_SWITCH_MEDIUM;
       return PINK_AUTO_MEDIUM;
     }
   }
@@ -1152,6 +1138,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 255;
       green = 255;
       blue = 255;
+      if (switchPressed)
+        return WHITE_SWITCH_HIGH;
       return WHITE_AUTO_HIGH;
     }
     if (color == RED)
@@ -1159,6 +1147,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 255;
       green = 0;
       blue = 0;
+      if (switchPressed)
+        return RED_SWITCH_HIGH;
       return RED_AUTO_HIGH;
     }
     if (color == GREEN)
@@ -1166,6 +1156,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 0;
       green = 255;
       blue = 0;
+      if (switchPressed)
+        return GREEN_SWITCH_HIGH;
       return GREEN_AUTO_HIGH;
     }
     if (color == BLUE)
@@ -1173,6 +1165,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 0;
       green = 0;
       blue = 255;
+      if (switchPressed)
+        return BLUE_SWITCH_HIGH;
       return BLUE_AUTO_HIGH;
     }
     if (color == YELLOW)
@@ -1180,6 +1174,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 255;
       green = 255;
       blue = 0;
+      if (switchPressed)
+        return YELLOW_SWITCH_HIGH;
       return YELLOW_AUTO_HIGH;
     }
     if (color == ORANGE)
@@ -1187,6 +1183,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 255;
       green = 128;
       blue = 0;
+      if (switchPressed)
+        return ORANGE_SWITCH_HIGH;
       return ORANGE_AUTO_HIGH;
     }
     if (color == PURPLE)
@@ -1194,6 +1192,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 127;
       green = 0;
       blue = 255;
+      if (switchPressed)
+        return PURPLE_SWITCH_HIGH;
       return PURPLE_AUTO_HIGH;
     }
     if (color == PINK)
@@ -1201,6 +1201,8 @@ byte mapValuesAndGetSignal(byte color, byte intensity)
       red = 255;
       green = 0;
       blue = 127;
+      if (switchPressed)
+        return PINK_SWITCH_HIGH;
       return PINK_AUTO_HIGH;
     }
   }
