@@ -17,9 +17,6 @@ const uint8_t naturalLightPin = A0;
 const bool DEBUG_MODE = true;
 
 volatile int lightState;
-volatile bool switchOn;
-volatile bool notifiedOn;
-volatile bool notifiedOff;
 volatile bool autoMode;
 
 int naturalLightIntensity;
@@ -42,7 +39,8 @@ enum PersonState
 
 volatile PersonState currentPersonState;
 volatile PersonState futurePersonState;
-int peopleInTheRoom;
+byte peopleInTheRoom;
+byte peopleInTheRoomWithOffset;
 int valExt;
 int valInt;
 int red;
@@ -54,6 +52,7 @@ int blue;
 const byte AUTO_ENABLED = 238;
 const byte AUTO_DISABLED = 239;
 const byte PEOPLE_IN_THE_ROOM = 240; // random byte to be distinguished from other event signals
+const byte peopleInTheRoomOffset = 240;
 
 // LIGHT STATES AND CAUSES
 
@@ -221,8 +220,8 @@ void onSwitchPressed(void);
 void onSerialInput(void);
 void onNaturalLight(void);
 void debug(char mode);
-void whatIsCurrentState(void);
-void howManyPeople(void);
+void getCurrentState(void);
+void getPeople(void);
 void lightsOff(void);
 byte getColor(void);
 byte mapValuesAndGetSignal(byte color, byte intensity, bool switchPressed);
@@ -234,9 +233,6 @@ void setup()
   peopleInTheRoom = 0;
   currentPersonState = OUT;
   lightState = LOW;
-  switchOn = false;
-  notifiedOn = false;
-  notifiedOff = false;
   autoMode = true;
   red = 255;
   green = 255;
@@ -282,8 +278,6 @@ void loop()
         if (peopleInTheRoom == 0)
         {
           futurePersonState = OUT;
-          if (switchOn)
-            switchOn = false;
           lightsOff();
           autoMode = true;
           Serial.println("Auto mode enabled");
@@ -292,12 +286,12 @@ void loop()
         else
         {
           futurePersonState = IN;
-          if (!switchOn)
+          if (autoMode)
             onNaturalLight();
         }
       }
       currentPersonState = futurePersonState;
-      whatIsCurrentState();
+      getCurrentState();
       timestampExternal = millis();
     }
   }
@@ -312,10 +306,10 @@ void loop()
       {
         futurePersonState = IN;
         peopleInTheRoom = peopleInTheRoom + 1;
-        bridge.write(PEOPLE_IN_THE_ROOM);
-        bridge.write(peopleInTheRoom);
-        howManyPeople();
-        if (!switchOn)
+        peopleInTheRoomWithOffset = peopleInTheRoomOffset + peopleInTheRoom;
+        bridge.write(peopleInTheRoomWithOffset);
+        getPeople();
+        if (autoMode)
           onNaturalLight();
       }
 
@@ -323,58 +317,55 @@ void loop()
       {
         futurePersonState = HALFWAY_OUT;
         peopleInTheRoom = peopleInTheRoom - 1;
-        howManyPeople();
-        bridge.write(PEOPLE_IN_THE_ROOM);
-        bridge.write(peopleInTheRoom);
+        getPeople();
+        peopleInTheRoomWithOffset = peopleInTheRoomOffset + peopleInTheRoom;
+        bridge.write(peopleInTheRoomWithOffset);
       }
 
       if (currentPersonState == HALFWAY_OUT)
         futurePersonState = HALFWAY_OUT;
 
       currentPersonState = futurePersonState;
-      whatIsCurrentState();
+      getCurrentState();
       timestampInternal = millis();
     }
   }
-  
+
   if (valExt == LOW && valInt == LOW)
   {
     if (currentPersonState == HALFWAY_IN && peopleInTheRoom == 0)
     {
       currentPersonState = OUT;
-      if (switchOn)
-        switchOn = false;
       lightsOff();
       autoMode = true;
-      // Serial.println("Auto mode enabled");
+      Serial.println("Auto mode enabled");
       bridge.write(AUTO_ENABLED);
     }
     if (currentPersonState == HALFWAY_IN && peopleInTheRoom > 0)
     {
       currentPersonState = IN;
-      if (switchOn)
-        switchOn = false;
       lightsOff();
       autoMode = true;
-      // Serial.println("Auto mode enabled");
+      Serial.println("Auto mode enabled");
       bridge.write(AUTO_ENABLED);
     }
     if (currentPersonState == HALFWAY_OUT)
     {
       currentPersonState = IN;
       peopleInTheRoom = peopleInTheRoom + 1;
-      howManyPeople();
-      bridge.write(PEOPLE_IN_THE_ROOM);
-      bridge.write(peopleInTheRoom);
-      if (!switchOn)
+      getPeople();
+      peopleInTheRoomWithOffset = peopleInTheRoomOffset + peopleInTheRoom;
+      bridge.write(peopleInTheRoomWithOffset);
+      if (autoMode)
         onNaturalLight();
     }
-    whatIsCurrentState();
+    getCurrentState();
   }
 
   if (millis() - timestamp > checkTime)
   {
-    if (currentPersonState == IN && !switchOn)
+    getCurrentState();
+    if (currentPersonState == IN && autoMode)
     {
       onNaturalLight();
       timestamp = millis();
@@ -388,17 +379,18 @@ void onSwitchPressed()
   if (millis() - lastDebounceTime > debounceDelay)
   {
     lightState = lightState > 0 ? LOW : HIGH;
+    Serial.println("lightState: " + String(lightState));
     if (lightState > 0)
     {
       byte color = getColor();
       byte intensity = getIntensity();
-      Serial.println("color: " + String(color) + " intensity: " + String(intensity));
+      // Serial.println("color: " + String(color) + " intensity: " + String(intensity));
       byte colorIntensity = mapValuesAndGetSignal(color, intensity, true);
       analogWrite(redPin, red);
       analogWrite(greenPin, green);
       analogWrite(bluePin, blue);
       // Serial.println("sending SWITCH signal");
-      Serial.println(colorIntensity);
+      // Serial.println(colorIntensity);
       bridge.write(colorIntensity);
       lastColorIntensity = colorIntensity;
     }
@@ -407,13 +399,16 @@ void onSwitchPressed()
       analogWrite(redPin, lightState);
       analogWrite(greenPin, lightState);
       analogWrite(bluePin, lightState);
-      Serial.println("sending SWITCH OFF signal");
+      // Serial.println("sending SWITCH OFF signal");
       bridge.write(SWITCH_OFF);
     }
-    switchOn = !switchOn;
     lastDebounceTime = millis();
+    autoMode = !autoMode;
+    if (!autoMode)
+      bridge.write(AUTO_DISABLED);
+    else
+      bridge.write(AUTO_ENABLED);
   }
-
   interrupts();
 }
 
@@ -434,8 +429,8 @@ void onSerialInput()
     // Serial.println("Reading from bridge");
     //  look for the next valid integer in the incoming serial stream:
     int value = bridge.parseInt(SKIP_ALL, '\n');
-    Serial.print("value: ");
-    Serial.println(value);
+    // Serial.print("value: ");
+    // Serial.println(value);
 
     if (value >= 0)
     {
@@ -447,16 +442,16 @@ void onSerialInput()
       blue = bridge.parseInt();
 
       int mode = bridge.parseInt(SKIP_ALL, '\n');
-
-      Serial.print("red: ");
-      Serial.print(red);
-      Serial.print(" green: ");
-      Serial.print(green);
-      Serial.print(" blue: ");
-      Serial.print(blue);
-      Serial.print(" mode: ");
-      Serial.println(mode); // 1 = mobile app, 0 voice
-
+      /*
+            Serial.print("red: ");
+            Serial.print(red);
+            Serial.print(" green: ");
+            Serial.print(green);
+            Serial.print(" blue: ");
+            Serial.print(blue);
+            Serial.print(" mode: ");
+            Serial.println(mode); // 1 = mobile app, 0 voice
+      */
       if (red == green && green == blue && red > 0) // shade of white
       {
         analogWrite(redPin, red);
@@ -872,15 +867,16 @@ void onSerialInput()
     }
     else
     {
-      autoMode = value == -1 ? true : false;
-      if (autoMode)
+      if (value == -1)
       {
-        // Serial.println("Auto mode enabled");
+        autoMode = true;
+        Serial.println("Auto mode enabled");
         bridge.write(AUTO_ENABLED);
       }
-      else
+      if (value == -2)
       {
-        // Serial.println("Auto mode disabled");
+        autoMode = false;
+        Serial.println("Auto mode disabled");
         bridge.write(AUTO_DISABLED);
       }
     }
@@ -890,7 +886,7 @@ void onSerialInput()
 void lightsOff()
 {
   // Serial.println("I'm in the lightsOff() function");
-  // howManyPeople();
+  // getPeople();
   lightState = LOW;
   // analogWrite(lightPin, lightState);
   analogWrite(redPin, 0);
@@ -921,11 +917,13 @@ void onNaturalLight()
       analogWrite(greenPin, green);
       analogWrite(bluePin, blue);
 
-      // Serial.println("sending signal");
+      Serial.println("sending " + String(signal) + " byte");
       bridge.write(signal);
 
       if (signal != AUTO_OFF)
         lastColorIntensity = signal;
+
+      lightState = HIGH;
     }
   }
   // debug('l');
@@ -1224,13 +1222,13 @@ void debug(char mode)
     }
     if (mode == 's')
     {
-      Serial.print("switchOn: ");
-      Serial.println(switchOn);
+      Serial.print("autoMode: ");
+      Serial.println(autoMode);
     }
   }
 }
 
-void whatIsCurrentState()
+void getCurrentState()
 {
   Serial.print("current state is ");
   if (currentPersonState == IN)
@@ -1241,14 +1239,13 @@ void whatIsCurrentState()
     Serial.print("HALFWAY_IN");
   if (currentPersonState == HALFWAY_OUT)
     Serial.print("HALFWAY_OUT");
-  if (switchOn)
-    Serial.println(" and the switch is ON");
+  if (autoMode)
+    Serial.println(" and the auto mode is ON");
   else
-    Serial.println(" and the switch is OFF");
+    Serial.println(" and the auto mode is OFF");
 }
 
-void howManyPeople()
+void getPeople()
 {
-  Serial.print(peopleInTheRoom);
-  Serial.println(" people in the room");
+  Serial.print(String(peopleInTheRoom) + " people in the room");
 }
