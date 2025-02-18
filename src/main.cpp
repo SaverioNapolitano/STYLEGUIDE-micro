@@ -51,8 +51,8 @@ int blue;
 
 const byte AUTO_ENABLED = 238;
 const byte AUTO_DISABLED = 239;
-const byte PEOPLE_IN_THE_ROOM = 240; // random byte to be distinguished from other event signals
-const byte peopleInTheRoomOffset = 240;
+const byte peopleInTheRoomOffset = 240; // random byte to be distinguished from other event signals
+ // to be subtracted from the byte received to get the actual number of people in the room
 
 // LIGHT STATES AND CAUSES
 

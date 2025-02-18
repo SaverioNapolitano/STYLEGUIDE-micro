@@ -29,12 +29,13 @@ The bridge and the microcontroller talk to each other over a (software) serial c
 
 The communication protocol is lightweight and straightforward: each event is encoded in a byte which is then sent to the bridge. 
 
-The only exception is the number of people in the room: in order to avoid it being interpreted as one of the other signals, a byte encoded with a special value is sent to the bridge; then the actual number of people in the room is communicated. 
 
 The encoded events involves
 - the light status (`ON`/`OFF`) and its cause (`AUTO`/`SWITCH`/`MOBILE_APP`/`VOICE`)
 - the color 
 - the light intensity (`HIGH`/`MEDIUM`/`LOW`)
+- the user preferences, e.g. if the auto mode is enabled (`AUTO_ENABLED`) or disabled (`AUTO_DISABLED`)
+- the number of people in the room, computed using an offset (`peopleInTheRoomWithOffset`)
 
 #### Bridge -> Micro
 
@@ -52,12 +53,13 @@ To determine its behaviour, the micro uses a finite state machine (FSM) to keep 
 **FSM** ![](images/fsm.png)
 
 > [!IMPORTANT]
-> This only applies if the `AUTO` mode is on.
+> The above finite state machine only applies if the `AUTO` mode is on.
 
 ## TODO
 
 - [ ] From serial connection to bluetooth 
 - [ ] Detect multiple people entering or exiting at the same time
+- [ ] Decouple the code for the motion sensor from the code for the actuators and the natural light sensor (see [here](https://github.com/SaverioNapolitano/STYLEGUIDE/tree/main#architecture))
 
 
 
